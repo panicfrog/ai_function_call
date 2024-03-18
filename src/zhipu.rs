@@ -17,7 +17,7 @@ impl fmt::Display for Model {
     }
 }
 
-pub fn a() -> String {
+pub fn json_schema() -> String {
     let mut params = Builder::build(|params| {
         params.properties(|params| {
             params.insert("location", |params| {
@@ -51,76 +51,94 @@ struct Params {
     tool_choices: Option<String>,
 }
 
-struct ToolWrapper {
-    id: String,
-    tool: Tool,
-}
-
 #[derive(Serialize)]
 #[serde(tag = "type")]
 enum Tool {
     #[serde(rename = "web_search")]
     WebSearch {
-        enabled: Option<bool>,
-        search_query: Option<String>,
+        web_search: ToolWebSearch,
     },
     #[serde(rename = "retrieval")]
     Retrieval {
-        knowledge_id: String,
-        prompt_template: Option<String>,
+        retrieval: ToolRetrieval,
     },
     #[serde(rename = "function")]
     Function {
-        name: String,
-        description: String,
-        parameters: Builder,
+        function: ToolFunction,
     },
 }
 
-// TODO: 自定义序列化
 #[derive(Serialize)]
-enum ToolCalls {
+struct ToolWebSearch {
+    enabled: Option<bool>,
+    search_query: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ToolRetrieval {
+    knowledge_id: String,
+    prompt_template: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ToolFunction {
+    name: String,
+    description: String,
+    parameters: Builder,
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type")]
+enum ToolCall {
+    #[serde(rename = "web_search")]
     WebSearch {
         id: String,
     },
+    #[serde(rename = "retrieval")]
     Retrieval {
         id: String,
     },
+    #[serde(rename = "function")]
     Function {
         id: String,
-        name: String,
-        arguments: String,
+        function: ToolCallFunction,
     },
 }
 
-impl ToolCalls {
+#[derive(Serialize)]
+struct ToolCallFunction {
+    name: String,
+    arguments: String,
+}
+
+impl ToolCall {
     fn id(&self) -> String {
         match self {
-            ToolCalls::WebSearch { id } => id.to_string(),
-            ToolCalls::Retrieval { id } => id.to_string(),
-            ToolCalls::Function { id, .. } => id.to_string(),
+            ToolCall::WebSearch { id } => id.to_string(),
+            ToolCall::Retrieval { id } => id.to_string(),
+            ToolCall::Function { id, .. } => id.to_string(),
         }
     }
 }
 
 #[derive(Serialize)]
-#[serde(untagged)]
+#[serde(tag = "role")]
 enum Message {
+    #[serde(rename = "system")]
     System {
-        role: String,
         content: String,
     },
+    #[serde(rename = "user")]
     User {
-        role: String,
         content: String,
     },
+    #[serde(rename = "assisant")]
     Assisant {
-        role: String,
         content: Option<String>,
-        tool_calls: Option<Vec<ToolCalls>>,
+        tool_calls: Option<Vec<ToolCall>>,
     },
+    #[serde(rename = "tool")]
     Tool {
-        role: String,
         content: String,
         tool_call_id: String,
     },
@@ -131,7 +149,23 @@ mod tests {
     use super::*;
     #[test]
     fn test_schema() {
-        let schema = a();
+        let schema = json_schema();
         println!("schema: {}", schema);
+    }
+
+    #[test]
+    fn test_message_serialize() {
+        let message = Message::User {
+            content: "hello".to_string(),
+        };
+        let serialized = serde_json::to_string(&message).unwrap();
+        println!("serialized: {}", serialized);
+
+        let message = Message::Assisant {
+            content: Some("hello".to_string()),
+            tool_calls: Some(vec![ToolCall::Function { id: "aaa".to_string(), function: ToolCallFunction { name: "bbb".to_string(), arguments: "ccc".to_string() } }],)
+        };
+        let serialized = serde_json::to_string(&message).unwrap();
+        println!("serialized: {}", serialized);
     }
 }
