@@ -55,17 +55,11 @@ struct Params {
 #[serde(tag = "type")]
 enum Tool {
     #[serde(rename = "web_search")]
-    WebSearch {
-        web_search: ToolWebSearch,
-    },
+    WebSearch { web_search: ToolWebSearch },
     #[serde(rename = "retrieval")]
-    Retrieval {
-        retrieval: ToolRetrieval,
-    },
+    Retrieval { retrieval: ToolRetrieval },
     #[serde(rename = "function")]
-    Function {
-        function: ToolFunction,
-    },
+    Function { function: ToolFunction },
 }
 
 #[derive(Serialize)]
@@ -91,13 +85,9 @@ struct ToolFunction {
 #[serde(tag = "type")]
 enum ToolCall {
     #[serde(rename = "web_search")]
-    WebSearch {
-        id: String,
-    },
+    WebSearch { id: String },
     #[serde(rename = "retrieval")]
-    Retrieval {
-        id: String,
-    },
+    Retrieval { id: String },
     #[serde(rename = "function")]
     Function {
         id: String,
@@ -125,13 +115,9 @@ impl ToolCall {
 #[serde(tag = "role")]
 enum Message {
     #[serde(rename = "system")]
-    System {
-        content: String,
-    },
+    System { content: String },
     #[serde(rename = "user")]
-    User {
-        content: String,
-    },
+    User { content: String },
     #[serde(rename = "assisant")]
     Assisant {
         content: Option<String>,
@@ -163,9 +149,43 @@ mod tests {
 
         let message = Message::Assisant {
             content: Some("hello".to_string()),
-            tool_calls: Some(vec![ToolCall::Function { id: "aaa".to_string(), function: ToolCallFunction { name: "bbb".to_string(), arguments: "ccc".to_string() } }],)
+            tool_calls: Some(vec![ToolCall::Function {
+                id: "aaa".to_string(),
+                function: ToolCallFunction {
+                    name: "bbb".to_string(),
+                    arguments: "ccc".to_string(),
+                },
+            }]),
         };
         let serialized = serde_json::to_string(&message).unwrap();
+        println!("serialized: {}", serialized);
+    }
+
+    #[test]
+    fn test_tool_function() {
+        let tool = Tool::Function {
+            function: ToolFunction {
+                name: "test".to_string(),
+                description: "test".to_string(),
+                parameters: Builder::build(|params| {
+                    params.properties(|params| {
+                        params.insert("location", |params| {
+                            params.string();
+                            params.desc("城市，如：北京")
+                        });
+                        params.insert("unit", |params| {
+                            params.enum_(|params| {
+                                params.push("c");
+                                params.push("f");
+                            });
+                            params.desc("温度单位，c:摄氏度，f:华氏度")
+                        });
+                    });
+                    params.required(vec!["location".to_string(), "unit".to_string()]);
+                }),
+            },
+        };
+        let serialized = serde_json::to_string(&tool).unwrap();
         println!("serialized: {}", serialized);
     }
 }
