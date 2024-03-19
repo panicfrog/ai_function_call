@@ -1,10 +1,16 @@
+use reqwest::header::{self, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use valico::json_schema::{Builder, PrimitiveType};
+
+use crate::jwt;
 const api_host: &'static str = "https://open.bigmodel.cn/api/paas/v4/chat/completions";
 
-enum Model {
+#[derive(Serialize)]
+pub enum Model {
+    #[serde(rename = "glm-3-turbo")]
     GLM3Turbo,
+    #[serde(rename = "glm-4")]
     GLM4,
 }
 
@@ -37,23 +43,24 @@ pub fn json_schema() -> String {
     params.into_json().to_string()
 }
 
-struct Params {
-    model: Model,
-    messages: Vec<Message>,
-    request_id: Option<String>,
-    do_sample: Option<bool>,
-    stream: Option<bool>,
-    temperature: Option<f32>,
-    top_p: Option<f32>,
-    max_tokens: Option<i32>,
-    stop: Option<Vec<String>>,
-    tools: Option<Vec<Tool>>,
-    tool_choices: Option<String>,
+#[derive(Serialize)]
+pub struct Params {
+    pub model: Model,
+    pub messages: Vec<Message>,
+    pub request_id: Option<String>,
+    pub do_sample: Option<bool>,
+    pub stream: Option<bool>,
+    pub temperature: Option<f32>,
+    pub top_p: Option<f32>,
+    pub max_tokens: Option<i32>,
+    pub stop: Option<Vec<String>>,
+    pub tools: Option<Vec<Tool>>,
+    pub tool_choices: Option<String>,
 }
 
 #[derive(Serialize)]
 #[serde(tag = "type")]
-enum Tool {
+pub enum Tool {
     #[serde(rename = "web_search")]
     WebSearch { web_search: ToolWebSearch },
     #[serde(rename = "retrieval")]
@@ -83,7 +90,7 @@ struct ToolFunction {
 
 #[derive(Serialize)]
 #[serde(tag = "type")]
-enum ToolCall {
+pub enum ToolCall {
     #[serde(rename = "web_search")]
     WebSearch { id: String },
     #[serde(rename = "retrieval")]
@@ -96,7 +103,7 @@ enum ToolCall {
 }
 
 #[derive(Serialize)]
-struct ToolCallFunction {
+pub struct ToolCallFunction {
     name: String,
     arguments: String,
 }
@@ -113,7 +120,7 @@ impl ToolCall {
 
 #[derive(Serialize)]
 #[serde(tag = "role")]
-enum Message {
+pub enum Message {
     #[serde(rename = "system")]
     System { content: String },
     #[serde(rename = "user")]
@@ -128,6 +135,25 @@ enum Message {
         content: String,
         tool_call_id: String,
     },
+}
+
+pub async fn request(params: Params) -> Result<(), reqwest::Error> {
+    let token =
+        jwt::generate_token("04be3218a66194d58885178d8daf518e.oXNoeEp0C9Ehy93F", 60 * 2).unwrap();
+
+    let response = reqwest::Client::new()
+        .post(api_host)
+        .header(header::AUTHORIZATION, token)
+        .json(&params)
+        .send()
+        .await?;
+    if response.status().is_success() {
+        let body = response.text().await?;
+        println!("body: {}", body);
+    } else {
+        println!("response: {:?}", response);
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -168,6 +194,7 @@ mod tests {
                 name: "test".to_string(),
                 description: "test".to_string(),
                 parameters: Builder::build(|params| {
+                    params.object();
                     params.properties(|params| {
                         params.insert("location", |params| {
                             params.string();
