@@ -1,12 +1,15 @@
-use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
-use serde::{Deserialize, Serialize};
+use base64::{engine::general_purpose::URL_SAFE, Engine as _};
+use hmac::{Hmac, Mac};
+use json::JsonValue;
+use sha2::Sha256;
 use thiserror::Error;
 
-#[derive(Debug, Serialize, Deserialize)]
-struct Claims {
-    api_key: String,
-    exp: i64,
-    timestamp: i64,
+type HmacSha256 = Hmac<Sha256>;
+
+struct Jwt {
+    header: JsonValue,
+    payload: JsonValue,
+    signature: String,
 }
 
 #[derive(Error, Debug)]
@@ -15,39 +18,51 @@ pub enum JWTError {
     InvalidToken,
     #[error("chrono error")]
     ChronoError,
-    #[error("json web token error")]
-    JWTError(#[from] jsonwebtoken::errors::Error),
 }
 
-pub fn generate_token(api_key: &str, exp_seconds: i64) -> Result<String, JWTError> {
+fn create_header_and_payload(key: String, exp_seconds: i64) -> Result<(String, String), JWTError> {
+    let header = json::object! {
+        "alg": "HS256",
+        "typ": "JWT",
+        "sign_type": "SIGN",
+    };
+
+    let seconds = chrono::Duration::try_seconds(exp_seconds as i64).ok_or(JWTError::ChronoError)?;
+    let now = chrono::Utc::now();
+    let exp = now
+        .checked_add_signed(seconds)
+        .ok_or(JWTError::ChronoError)?;
+
+    let payload = json::object! {
+        "api_key": key,
+        "exp": exp.timestamp() * 1000,
+        "timestamp": now.timestamp() * 1000,
+    };
+    let encoded_header = URL_SAFE.encode(header.dump());
+    let encoded_payload = URL_SAFE.encode(payload.dump());
+    Ok((encoded_header, encoded_payload))
+}
+
+fn create_signature(key: &str, encoded_header: &str, encoded_payload: &str) -> String {
+    let mut mac =
+        HmacSha256::new_from_slice(key.as_bytes()).expect("HMAC can take key of any size");
+    mac.update(format!("{}.{}", encoded_header, encoded_payload).as_bytes());
+    let result = mac.finalize();
+    URL_SAFE.encode(result.into_bytes())
+}
+
+pub fn create_jwt(api_key: &str, exp_seconds: i64) -> Result<String, JWTError> {
     let parts = api_key.split(".").collect::<Vec<_>>();
     if parts.len() != 2 {
         return Err(JWTError::InvalidToken);
     }
     let id = parts[0];
     let key = parts[1];
-    let seconds = chrono::Duration::try_seconds(exp_seconds as i64).ok_or(JWTError::ChronoError)?;
-    let now = chrono::Utc::now();
-    let exp = now
-        .checked_add_signed(seconds)
-        .ok_or(JWTError::ChronoError)?;
-    let claims = Claims {
-        api_key: id.to_string(),
-        exp: exp.timestamp(),
-        timestamp: now.timestamp(),
-    };
-    let header = Header::new(Algorithm::HS256);
-    encode(&header, &claims, &EncodingKey::from_secret(key.as_bytes())).map_err(JWTError::from)
-}
+    let (encoded_header, encoded_payload) = create_header_and_payload(id.to_string(), exp_seconds)?;
+    let signature = create_signature(key, &encoded_header, &encoded_payload);
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_generate_token() {
-        let token =
-            generate_token("04be3218a66194d58885178d8daf518e.oXNoeEp0C9Ehy93F", 3600).unwrap();
-        println!("token: {}", token);
-    }
+    Ok(format!(
+        "{}.{}.{}",
+        encoded_header, encoded_payload, signature
+    ))
 }

@@ -139,7 +139,7 @@ pub enum Message {
 
 pub async fn request(params: Params) -> Result<(), reqwest::Error> {
     let token =
-        jwt::generate_token("04be3218a66194d58885178d8daf518e.oXNoeEp0C9Ehy93F", 60 * 2).unwrap();
+        jwt::create_jwt("04be3218a66194d58885178d8daf518e.oXNoeEp0C9Ehy93F", 60 * 2).unwrap();
 
     let response = reqwest::Client::new()
         .post(api_host)
